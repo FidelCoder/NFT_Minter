@@ -1,0 +1,23 @@
+.explore-section {
+    background-color: #000;
+}
+
+.nonfts-div {
+    display: flex;
+    position: absolute;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    height: 80%;
+    width: 100%;
+    padding-bottom: 77px;
+    background-color: #000;
+    color: #fff;
+    text-align: center;
+    font-family: 'sans-serif';
+    font-size: 3rem;
+}
+
+.nonfts-text {
+    padding: 30px;
+}
