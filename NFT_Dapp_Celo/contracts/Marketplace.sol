@@ -48,7 +48,6 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         feePercent = _feePercent;
     }
 
-
     /// @dev checks if price is valid
     /// @notice price needs be at least 1 ether to prevent unexpected bugs and issues when calculating sales Fee
     modifier isValidPrice(uint price) {
@@ -56,20 +55,23 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         _;
     }
 
-    /// @dev Make item to offer on the marketplace
-    /// @param _nft the address of the contract where the NFT was minted
-    /// @param _tokenId the id of the NFT, comes from the NFT contract
-    function makeItem(
-        ERC721 _nft,
-        uint256 _tokenId,
-        uint256 _price
-    ) external isValidPrice(_price) {
+    modifier isOwnerAndApproved(uint _tokenId, IERC721 _nft) {
         require(
             _nft.ownerOf(_tokenId) == msg.sender &&
                 _nft.getApproved(_tokenId) == address(this),
             "Caller isn't the Token owner or the contract hasn't been approved"
         );
+        _;
+    }
 
+    /// @dev Make item to offer on the marketplace
+    /// @param _nft the address of the contract where the NFT was minted
+    /// @param _tokenId the id of the NFT, comes from the NFT contract
+    function makeItem(
+        IERC721 _nft,
+        uint256 _tokenId,
+        uint256 _price
+    ) external isValidPrice(_price) isOwnerAndApproved(_tokenId, _nft) {
         // increment itemCount
         itemCount++;
         // transfer nft
@@ -136,19 +138,41 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         }
     }
 
-    /* allows someone to resell a token they have purchased,
-     use itemId on the frontend instead of tokenId to call this function */
-    function relistItem(uint256 tokenId, uint256 price)
+    /**
+     * @dev allows someone to resell a token they have purchased,
+     
+    */
+    function relistItem(uint256 _itemId, uint256 _price)
         external
-        isValidPrice(price)
+        isValidPrice(_price)
+        isOwnerAndApproved(items[_itemId].tokenId, items[_itemId].nft)
     {
-        require(items[tokenId].sold, "Item is already listed");
+        require(items[_itemId].sold, "Item is already listed");
         require(
-            items[tokenId].seller == msg.sender,
+            items[_itemId].seller == msg.sender,
             "Only item owner can perform this operation"
         );
-        items[tokenId].sold = false;
-        items[tokenId].price = price;
+        Item storage currentItem = items[_itemId];
+        currentItem.sold = false;
+        currentItem.price = _price;
+        // transfer nft
+        currentItem.nft.transferFrom(
+            msg.sender,
+            address(this),
+            currentItem.tokenId
+        );
+        require(
+            currentItem.nft.ownerOf(currentItem.tokenId) == address(this),
+            "NFT transfer failed"
+        );
+        // emit Offered event
+        emit Offered(
+            _itemId,
+            address(currentItem.nft),
+            currentItem.tokenId,
+            _price,
+            msg.sender
+        );
     }
 
     /**
