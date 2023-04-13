@@ -6,6 +6,16 @@ import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "hardhat/console.sol";
 
+error Error__PriceLowerThanOne();
+error Error__NotTokenOwner();
+error Error__ContractNotApproved();
+error Error__NotEnoughEther();
+error Error__NFTTransferFailed();
+error Error__PaymentFailed();
+error Error__AlreadySold();
+error Error__ItemDontExist();
+error Error__AlreadyListed();
+
 contract Marketplace is ReentrancyGuard, ERC721Holder {
     /// @dev Variables
     address payable public immutable feeAccount; // the account that receives fees
@@ -42,6 +52,8 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         address indexed buyer
     );
 
+    event ItemDeleted(address indexed owner, uint256 indexed itemId);
+
     // sets deployer as the account that receives the fees and the fee percentage
     constructor(uint256 _feePercent) {
         feeAccount = payable(msg.sender);
@@ -51,16 +63,26 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
     /// @dev checks if price is valid
     /// @notice price needs be at least 1 ether to prevent unexpected bugs and issues when calculating sales Fee
     modifier isValidPrice(uint price) {
-        require(price >= 1 ether, "price needs to be at least one CELO");
+        if (price < 1 ether) {
+            revert Error__PriceLowerThanOne();
+        }
         _;
     }
 
     modifier isOwnerAndApproved(uint _tokenId, IERC721 _nft) {
-        require(
-            _nft.ownerOf(_tokenId) == msg.sender &&
-                _nft.getApproved(_tokenId) == address(this),
-            "Caller isn't the Token owner or the contract hasn't been approved"
-        );
+        if (_nft.ownerOf(_tokenId) != msg.sender) {
+            revert Error__NotTokenOwner();
+        }
+        if (_nft.getApproved(_tokenId) != address(this)) {
+            revert Error__ContractNotApproved();
+        }
+        _;
+    }
+
+    modifier isItemOwner(uint256 _itemId) {
+        if (items[_itemId].seller != msg.sender) {
+            revert Error__NotTokenOwner();
+        }
         _;
     }
 
@@ -88,17 +110,28 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         emit Offered(itemCount, address(_nft), _tokenId, _price, msg.sender);
     }
 
+    function removeItem(uint256 _itemId) external isItemOwner(_itemId) {
+        //this returns everything to default
+        delete items[_itemId];
+        //emit deleted item
+        emit ItemDeleted(msg.sender, _itemId);
+    }
+
     /// @dev purchase an item from the marketplace
     /// @notice sales fee is calculated by multiplying the sales fee percentage to the price of the item
     function purchaseItem(uint256 _itemId) external payable nonReentrant {
-        require(_itemId > 0 && _itemId <= itemCount, "item doesn't exist");
-        require(!items[_itemId].sold, "item already sold");
+        if (_itemId <= 0 || _itemId > itemCount) {
+            revert Error__ItemDontExist();
+        }
+
+        if (items[_itemId].sold == true) {
+            revert Error__AlreadySold();
+        }
 
         uint256 salesFee = feePercent > 0 ? getSalesFee(_itemId) : 0;
-        require(
-            msg.value == (items[_itemId].price + salesFee),
-            "not enough ether to cover item price and market fee"
-        );
+        if (msg.value != (items[_itemId].price + salesFee)) {
+            revert Error__NotEnoughEther();
+        }
         Item storage item = items[_itemId];
         address seller = item.seller;
         // update seller to be the buyer
@@ -106,16 +139,19 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         item.sold = true;
 
         item.nft.transferFrom(address(this), item.seller, item.tokenId);
-        require(
-            item.nft.ownerOf(item.tokenId) == msg.sender,
-            "Transfer of item failed"
-        );
+        if (item.nft.ownerOf(item.tokenId) != msg.sender) {
+            revert Error__NFTTransferFailed();
+        }
 
         (bool success, ) = payable(seller).call{value: item.price}("");
-        require(success, "Transfer of payment failed");
+        if (!success) {
+            revert Error__PaymentFailed();
+        }
         if (salesFee > 0) {
             (bool sent, ) = feeAccount.call{value: salesFee}("");
-            require(sent, "Transfer of sales fee failed");
+            if (!sent) {
+                revert Error__PaymentFailed();
+            }
         }
 
         // emits Bought event
@@ -142,16 +178,21 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
      * @dev allows someone to resell a token they have purchased,
      
     */
-    function relistItem(uint256 _itemId, uint256 _price)
+    function relistItem(
+        uint256 _itemId,
+        uint256 _price
+    )
         external
         isValidPrice(_price)
         isOwnerAndApproved(items[_itemId].tokenId, items[_itemId].nft)
     {
-        require(items[_itemId].sold, "Item is already listed");
-        require(
-            items[_itemId].seller == msg.sender,
-            "Only item owner can perform this operation"
-        );
+        if (items[_itemId].sold == false) {
+            revert Error__AlreadyListed();
+        }
+        if (items[_itemId].seller != msg.sender) {
+            revert Error__NotTokenOwner();
+        }
+
         Item storage currentItem = items[_itemId];
         currentItem.sold = false;
         currentItem.price = _price;
@@ -161,10 +202,9 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
             address(this),
             currentItem.tokenId
         );
-        require(
-            currentItem.nft.ownerOf(currentItem.tokenId) == address(this),
-            "NFT transfer failed"
-        );
+        if (currentItem.nft.ownerOf(currentItem.tokenId) != address(this)) {
+            revert Error__NFTTransferFailed();
+        }
         // emit Offered event
         emit Offered(
             _itemId,

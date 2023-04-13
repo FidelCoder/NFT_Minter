@@ -22,19 +22,19 @@ To get this project up running locally, follow these simple steps:
 git clone: https://github.com/Griffins-sys254/NFT_Minter.git
 ```
 
-### 2.2 Navigate to the directory:
+<!-- ### 2.2 Navigate to the directory:
 
 ```bash
 cd celo-react-boilerplate
-```
+``` -->
 
-### 2.3 Install the dependencies:
+### 2.2 Install the dependencies:
 
 ```bash
 npm install
 ```
 
-### 2.4 Run the dapp:
+### 2.3 Run the dapp:
 
 ```bash
 npm start
