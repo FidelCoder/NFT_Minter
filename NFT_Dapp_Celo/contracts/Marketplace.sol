@@ -42,6 +42,8 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         address indexed buyer
     );
 
+    event ItemDeleted(address indexed owner, uint256 indexed itemId);
+
     // sets deployer as the account that receives the fees and the fee percentage
     constructor(uint256 _feePercent) {
         feeAccount = payable(msg.sender);
@@ -62,6 +64,13 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
             "Caller isn't the Token owner or the contract hasn't been approved"
         );
         _;
+    }
+
+    modifier isItemOwner(uint256 _itemId) {
+        require(
+            items[_itemId].seller == msg.sender,
+            "Caller isn't the Owner of Item"
+        );
     }
 
     /// @dev Make item to offer on the marketplace
@@ -86,6 +95,13 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
         );
         // emit Offered event
         emit Offered(itemCount, address(_nft), _tokenId, _price, msg.sender);
+    }
+
+    function removeItem(uint256 _itemId) external isItemOwner(_itemId) {
+        //this returns everything to default
+        delete items[_itemId];
+        //emit deleted item
+        emit ItemDeleted(msg.sender, _itemId);
     }
 
     /// @dev purchase an item from the marketplace
@@ -142,7 +158,10 @@ contract Marketplace is ReentrancyGuard, ERC721Holder {
      * @dev allows someone to resell a token they have purchased,
      
     */
-    function relistItem(uint256 _itemId, uint256 _price)
+    function relistItem(
+        uint256 _itemId,
+        uint256 _price
+    )
         external
         isValidPrice(_price)
         isOwnerAndApproved(items[_itemId].tokenId, items[_itemId].nft)
